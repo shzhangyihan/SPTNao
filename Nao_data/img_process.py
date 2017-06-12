@@ -16,8 +16,9 @@ csv_array = []
 while not img is None:
     # img processing
     print "Start processing img " + str(iterator)
-    canny = cv2.Canny(img, canny_lower, canny_upper)
-    canny = cv2.resize(canny, (resize_x, resize_y))
+    img = cv2.resize(img, (resize_x, resize_y))
+    blur = cv2.GaussianBlur(img, (5, 5), 0)
+    canny = cv2.Canny(blur, canny_lower, canny_upper)
     img_edge_path = "./edge_data/camImage" + str(iterator) + ".png"
     cv2.imwrite(img_edge_path, canny)
     csv_array.append(canny)

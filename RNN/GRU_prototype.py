@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import csv
 import cv2
 
+np.set_printoptions(threshold='nan')
+
 # hyperparameters
 num_epochs = 200
 total_series_length = 13
@@ -48,6 +50,7 @@ def readData(root_path, is_self):
             img_path = root_path + "/camImage" + str(iterator) + ".png"
             img = cv2.imread(img_path, 0)
             data_set = img.flatten()
+            data_set = map(lambda x: x/255, data_set)
             data_set = np.append(data_set, np.asarray(row))
             print(data_set.shape)
             array.append(data_set)
@@ -59,6 +62,7 @@ def readData(root_path, is_self):
         img = cv2.imread(img_path, 0)
         while not img is None:
             data_set = img.flatten()
+            data_set = map(lambda x: x/255, data_set)
             data_set = np.append(data_set, np.zeros(4))
             print(data_set.shape)
             array.append(data_set)
@@ -91,7 +95,7 @@ def plot(loss_list, prediction_series, actual_series):
         p = plt.subplot(2, 3, iterator + 3)
         dimension = 1200 + iterator
         plt.cla()
-        plt.axis([0, total_series_length, 0, 1.5])
+        plt.axis([0, total_series_length, -0.5, 1.5])
         p.plot(np.asarray(prediction_series)[:, dimension], color = 'r')
         p.plot(np.asarray(actual_series)[:, dimension], color = 'b')
         title = "Input dimension " + str(iterator)

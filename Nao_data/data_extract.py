@@ -9,7 +9,7 @@ import cv2
 import csv
 import time
 
-NAO_IP = "192.168.11.81"
+NAO_IP = "192.168.11.68"
 PORT = 9559
 
 alconnman = ALProxy("ALConnectionManager", NAO_IP, PORT)
@@ -90,8 +90,13 @@ for k in range(100):
     #print "Errors"
     #print errors
     
+    ###################################### normalize joints
+    min_vals = [-1.3265,-2.0857,-2.0857,0.0349]
+    size_vals = [0.3142+1.3265,2.0857+2.0857,2.0857+2.0857,1.5446-0.0349]
+    sub_vals = map(operator.sub, sensorAngles, min_vals)
+    normal_joints = map(operator.truediv, sub_vals, size_vals)
     
-    csv_list = sensorAngles
+    csv_list = normal_joints
     csv_2darray.append(csv_list)
     
     time2 = time.time()

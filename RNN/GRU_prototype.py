@@ -12,10 +12,10 @@ num_epochs = 200
 total_series_length = 13
 input_size = 4 + 1200
 output_size = input_size
-cell_size = 3 * input_size
+cell_size = 1 * input_size
 batch_size = 320
 num_batch = 1
-num_layer = 4
+num_layer = 2
 seq_len = 13
 
 # GRU define

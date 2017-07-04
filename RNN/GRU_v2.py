@@ -8,8 +8,8 @@ np.set_printoptions(threshold = 'nan')
 
 # hyperparameters
 learning_rate = 0.001
-num_epochs = 100
-num_epochs_other = 200
+num_epochs = 150
+num_epochs_other = 300
 total_length = 840
 input_size = 4 + 40
 output_size = input_size
@@ -138,15 +138,6 @@ with tf.Session() as sess:
         print("Epoch ", epoch, " loss: ", epoch_loss)
         if epoch % 5 == 0:
             plot(loss_list, pred_series, actual, False)
-    
-#    test(0)
-#    test(1)
-#    test(2)
-#    test(3)
-#    test(4)
-#    test(5)
-#    test(6)
-#    test(7)
     
     x, y, actual = readData(0, False)
     for epoch in range(num_epochs_other):

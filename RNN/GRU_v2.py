@@ -7,8 +7,8 @@ import cv2
 np.set_printoptions(threshold = 'nan')
 
 # hyperparameters
-learning_rate = 0.001
-num_epochs = 150
+learning_rate = 0.0005
+num_epochs = 200
 num_epochs_other = 300
 total_length = 840
 input_size = 4 + 40
@@ -74,7 +74,7 @@ def readData():
     
     return(x, y, actual)
 
-def updataData(x, pred):
+def updateData(x, pred):
     y = x
     pred = np.asarray(pred)
     pred_x = np.roll(pred, -1, axis = 0)
@@ -87,39 +87,33 @@ def updataData(x, pred):
         y[0, :, i] = pred_y[0, :, i]
     return(x, y)
 
-def test(data_set):
-    x, y, actual = readData(data_set, False)
-    inH = np.zeros([num_batch, cell_size * num_layer])
-    start_index = 0
-    pred_series = []
-    while start_index < total_length:
-        print(start_index)
-        X = x[:, start_index: start_index + seq_len, :]
-        Y_ = y[:, start_index: start_index + seq_len, :]
-        dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
-        l, outH, pred = sess.run([loss, state, Y], feed_dict = dic)
-        start_index += seq_len
-        print(l)
-        for i in range(seq_len):
-            pred_series.append(pred[i, :])
-    plot(None, pred_series, actual, True)
 
-def plot(loss_list, prediction_series, actual_series, need_press):
-    print 'p'
-    p = plt.subplot(2, 3, 1)
+def plot(loss_list, x_b, y_b, actual_b, need_press):
+    p = plt.subplot(3, 3, 1)
     plt.cla()
-    if loss_list is not None:
-        plt.plot(loss_list)
-    p.set_title("Loss function")
-    
-    for iterator in range(4):
-        p = plt.subplot(2, 3, iterator + 3)
-        plt.cla()
-        plt.axis([0, total_length, -1, 1])
-        p.plot(np.asarray(prediction_series)[:, iterator], color = 'r')
-        p.plot(np.asarray(actual_series)[:, iterator], color = 'b')
-        title = "Joint info #" + str(iterator + 1)
-        p.set_title(title)
+    plt.plot(loss_list)
+    for batch in range(num_batch):
+        x = x_b[batch]
+        y = y_b[batch]
+        inH = np.zeros([batch_size, cell_size * num_layer])
+        start_index = 0
+        pred_series = []
+        while start_index < total_length:
+            X = x[:, start_index: start_index + seq_len, :]
+            Y_ = y[:, start_index: start_index + seq_len, :]
+            dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
+            outH, pred = sess.run([state, Y], feed_dict = dic)
+            start_index += seq_len
+            for i in range(seq_len):
+                pred_series.append(pred[i, :])
+        for iterator in range(4):
+            p = plt.subplot(3, 3, batch * 4 + iterator + 2)
+            plt.cla()
+            plt.axis([0, total_length, -1, 1])
+            p.plot(np.asarray(pred_series)[:, iterator], color = 'r')
+            p.plot(np.asarray(actual_b[0])[:, iterator], color = 'b')
+            title = "Batch " + str(batch) + " Joint " + str(iterator + 1)
+            p.set_title(title)
     
     plt.draw()
     if need_press:
@@ -138,12 +132,12 @@ with tf.Session() as sess:
             x = x_b[batch]
             y = y_b[batch]
             actual = actual_b[batch]
-            inH = np.zeros([num_batch, cell_size * num_layer])
+            inH = np.zeros([batch_size, cell_size * num_layer])
             start_index = 0
             pred_series = []
             while start_index < total_length:
                 X = x[:, start_index: start_index + seq_len, :]
-                Y_ = y[:, start_indexL start_index + seq_len, :]
+                Y_ = y[:, start_index: start_index + seq_len, :]
                 dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
                 _, l, outH, pred = sess.run([optimizer, loss, state, Y], feed_dict = dic)
                 inH = outH
@@ -157,5 +151,7 @@ with tf.Session() as sess:
         loss_list.append(epoch_loss)
         print("Epoch ", epoch, " loss: ", epoch_loss)
         if epoch % 5 == 0:
-            plot(loss_list)
+            plot(loss_list, x_b, y_b, actual_b, False)
+        if epoch == num_epochs - 1:
+            plot(loss_list, x_b, y_b, actual_b, True)
 

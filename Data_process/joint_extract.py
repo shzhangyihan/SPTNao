@@ -62,7 +62,7 @@ def get_contourcenter(cnts_list):
 
 time0 = time.time()
 csv_2darray=[]
-for k in range(2400):
+for k in range(1200):
     time1 = time.time()
     print k
     
@@ -95,6 +95,10 @@ for k in range(2400):
     csv_2darray.append(csv_list)
     
     time2 = time.time()
+    while time2 - time1 < 0.00999:
+        time2 = time.time()
+    
+    time2 = time.time()
     print "time diff = " + str(time2-time1)
 
 ################################################################### Save CSV
@@ -103,7 +107,7 @@ print "total time diff = " + str(time3-time0)
 
 camProxy.unsubscribe(nameId)
 
-f = open('nao_data_right.csv', 'w')
+f = open('nao_data_left.csv', 'w')
 
 writer = csv.writer(f, lineterminator='\n')
 writer.writerows(csv_2darray)

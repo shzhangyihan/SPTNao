@@ -61,8 +61,8 @@ mcell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(cell_size[i]) for i 
 out, state = tf.nn.dynamic_rnn(mcell, x_in, initial_state = Hin)
 
 # output
-Yj = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), joint_size)
-Yv = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), vision_size)
+Yj = tf.contrib.layers.fully_connected(tf.reshape(out, [-1, cell_size[2]]), joint_size, activation_fn = None, scope = "joint")
+Yv = tf.contrib.layers.fully_connected(tf.reshape(out, [-1, cell_size[2]]), vision_size, activation_fn = None, scope = "vision")
 Y = tf.concat([Yj, Yv], 1)
 Xj = tf.reshape(Yj, [batch_size, seq_len, joint_size])
 

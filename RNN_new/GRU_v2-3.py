@@ -23,7 +23,7 @@ total_cell_size = np.sum(cell_size)
 num_layer = 3
 batch_size = 1
 num_batch = 1
-seq_len = 60
+seq_len = 80
 
 encode_path = './data/encode/'
 joint_path = {
@@ -44,50 +44,51 @@ def initJoint(length):
     joint[:, :, 0:joint_size] = j
     return joint
 
-# GRU graph input for training
-x_placeholder = tf.placeholder(tf.float64, [None, None, vision_size])
-y_placeholder = tf.placeholder(tf.float64, [None, None, output_size])
-Y_ = tf.reshape(y_placeholder, [-1, output_size])
-Hin = tf.placeholder(tf.float64, [None, total_cell_size])
-Xj = tf.Variable(initJoint(seq_len))
-reset = tf.assign(Xj, initJoint(seq_len))
-
-# GRU graph input for testing
-x_t = tf.placeholder(tf.float64, [None, 1, vision_size])
-y_t = tf.placeholder(tf.float64, [None, 1, output_size])
-Hin_t = tf.placeholder(tf.float64, [None, total_cell_size])
-Xj_t = tf.Variable(initJoint(1))
-reset_t = tf.assign(Xj_t, initJoint(1))
-
-# GRU model for training
-w_j = tf.Variable(tf.random_normal([cell_size[2], joint_size]))
-w_v = tf.Variable(tf.random_normal([cell_size[2], vision_size]))
-b_j = tf.Variable(tf.zeros[joint_size])
-b_v = tf.Variable(tf.zeros[vision_size])
-mcell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(cell_size[i]) for i in range(num_layer)], state_is_tuple = False)
-x_in = tf.concat([Xj, x_placeholder], 2)
-out, state = tf.nn.dynamic_rnn(mcell, x_in, initial_state = Hin)
-
-# GRU model for testing
-x_in_t = tf.concat([Xj_t, x_t], 2)
-out_t, state_t = tf.nn.dynamic_rnn(mcell, x_in_t, initial_state = Hin_t)
-
-# output
-#Yj = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), joint_size)
-#Yv = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), vision_size)
-Yj = tf.matmul(tf.reshape(out, [-1, cell_size[2]]), w_j) + b_j
-Yv = tf.matmul(tf.reshape(out, [-1, cell_size[2]]), w_v) + b_v
-Y = tf.concat([Yj, Yv], 1)
-Xj = tf.reshape(Yj, [batch_size, seq_len, joint_size])
-
-# loss and optimizer for self
-loss = tf.contrib.losses.mean_squared_error(Y, Y_)
-optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
-
-# loss and optimizer for other
-Y_j, Y_v = tf.split(Y_, [joint_size, vision_size], 1)
-loss_other = tf.contrib.losses.mean_squared_error(Yv, Y_v)
-optimizer_other = tf.train.AdamOptimizer(learning_rate).minimize(loss_other)
+with tf.variable_scope('GRU') as scope:
+    # GRU graph input for training
+    x_placeholder = tf.placeholder(tf.float64, [None, None, vision_size])
+    y_placeholder = tf.placeholder(tf.float64, [None, None, output_size])
+    Y_ = tf.reshape(y_placeholder, [-1, output_size])
+    Hin = tf.placeholder(tf.float64, [None, total_cell_size])
+    Xj = tf.Variable(initJoint(seq_len))
+    reset = tf.assign(Xj, initJoint(seq_len))
+    
+    # GRU model for training
+    mcell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(cell_size[i]) for i in range(num_layer)], state_is_tuple = False)
+    x_in = tf.concat([Xj, x_placeholder], 2)
+    out, state = tf.nn.dynamic_rnn(mcell, x_in, initial_state = Hin)
+    
+    # output
+    Yj = tf.contrib.layers.fully_connected(tf.reshape(out, [-1, cell_size[2]]), joint_size, activation_fn = None, scope = "joint")
+    Yv = tf.contrib.layers.fully_connected(tf.reshape(out, [-1, cell_size[2]]), vision_size, activation_fn = None, scope = "vision")
+    Y = tf.concat([Yj, Yv], 1)
+    Xj = tf.reshape(Yj, [batch_size, seq_len, joint_size])
+    
+    # loss and optimizer for self
+    loss = tf.contrib.losses.mean_squared_error(Y, Y_)
+    optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
+    
+    # loss and optimizer for other
+    Y_j, Y_v = tf.split(Y_, [joint_size, vision_size], 1)
+    loss_other = tf.contrib.losses.mean_squared_error(Yv, Y_v)
+    optimizer_other = tf.train.AdamOptimizer(learning_rate).minimize(loss_other)
+    
+    # GRU graph input for testing
+    x_t = tf.placeholder(tf.float64, [None, 1, vision_size])
+    Hin_t = tf.placeholder(tf.float64, [None, total_cell_size])
+    Xj_t = tf.Variable(initJoint(1))
+    reset_t = tf.assign(Xj_t, initJoint(1))
+    
+    # GRU model for testing
+    x_in_t = tf.concat([Xj_t, x_t], 2)
+    scope.reuse_variables()
+    out_t, state_t = tf.nn.dynamic_rnn(mcell, x_in_t, initial_state = Hin_t)
+    
+    # test output
+    Yj_t = tf.contrib.layers.fully_connected(tf.reshape(out_t, [-1, cell_size[2]]), joint_size, activation_fn = None, reuse = True,scope = "joint")
+    Yv_t = tf.contrib.layers.fully_connected(tf.reshape(out_t, [-1, cell_size[2]]), vision_size, activation_fn = None, reuse = True, scope = "vision")
+    Y_t = tf.concat([Yj, Yv], 1)
+    Xj_t = tf.reshape(Yj_t, [batch_size, 1, joint_size])
 
 # run the tf graph on CPU
 config = tf.ConfigProto(device_count = {'GPU': 0})
@@ -126,14 +127,16 @@ def test(batch):
     x, y, actual = readData(batch, True)
     
     inH = np.zeros([batch_size, total_cell_size])
-    sess.run(reset)
+    sess.run(reset_t)
+    seq_len = 1
     start_index = 0
     pred_series = []
     while start_index < total_length:
+#        print start_index
         X = x[:, start_index: start_index + seq_len, joint_size:]
         Y_ = y[:, start_index: start_index + seq_len, :]
-        dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
-        outH, pred = sess.run([state, Yj], feed_dict = dic)
+        dic = {x_t: X, Hin_t: inH}
+        outH, pred = sess.run([state_t, Yj_t], feed_dict = dic)
         inH = outH
         start_index += seq_len
         for i in range(seq_len):

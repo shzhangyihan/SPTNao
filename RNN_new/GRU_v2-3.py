@@ -33,8 +33,8 @@ joint_path = {
 }
 result_path = './result/'
 
-def initJoint():
-    joint = np.zeros([batch_size, seq_len, joint_size]).astype(float)
+def initJoint(length):
+    joint = np.zeros([batch_size, length, joint_size]).astype(float)
     
     f = open(joint_path[0], 'rb')
     dataReader = csv.reader(f)
@@ -44,25 +44,39 @@ def initJoint():
     joint[:, :, 0:joint_size] = j
     return joint
 
-# GRU graph input
+# GRU graph input for training
 x_placeholder = tf.placeholder(tf.float64, [None, None, vision_size])
 y_placeholder = tf.placeholder(tf.float64, [None, None, output_size])
 Y_ = tf.reshape(y_placeholder, [-1, output_size])
 Hin = tf.placeholder(tf.float64, [None, total_cell_size])
-Xj = tf.Variable(initJoint())
-reset = tf.assign(Xj, initJoint())
+Xj = tf.Variable(initJoint(seq_len))
+reset = tf.assign(Xj, initJoint(seq_len))
 
-# GRU model
-print x_placeholder.shape
-print Xj.shape
-x_in = tf.concat([Xj, x_placeholder], 2)
-print x_in.shape
+# GRU graph input for testing
+x_t = tf.placeholder(tf.float64, [None, 1, vision_size])
+y_t = tf.placeholder(tf.float64, [None, 1, output_size])
+Hin_t = tf.placeholder(tf.float64, [None, total_cell_size])
+Xj_t = tf.Variable(initJoint(1))
+reset_t = tf.assign(Xj_t, initJoint(1))
+
+# GRU model for training
+w_j = tf.Variable(tf.random_normal([cell_size[2], joint_size]))
+w_v = tf.Variable(tf.random_normal([cell_size[2], vision_size]))
+b_j = tf.Variable(tf.zeros[joint_size])
+b_v = tf.Variable(tf.zeros[vision_size])
 mcell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(cell_size[i]) for i in range(num_layer)], state_is_tuple = False)
+x_in = tf.concat([Xj, x_placeholder], 2)
 out, state = tf.nn.dynamic_rnn(mcell, x_in, initial_state = Hin)
 
+# GRU model for testing
+x_in_t = tf.concat([Xj_t, x_t], 2)
+out_t, state_t = tf.nn.dynamic_rnn(mcell, x_in_t, initial_state = Hin_t)
+
 # output
-Yj = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), joint_size)
-Yv = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), vision_size)
+#Yj = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), joint_size)
+#Yv = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size[2]]), vision_size)
+Yj = tf.matmul(tf.reshape(out, [-1, cell_size[2]]), w_j) + b_j
+Yv = tf.matmul(tf.reshape(out, [-1, cell_size[2]]), w_v) + b_v
 Y = tf.concat([Yj, Yv], 1)
 Xj = tf.reshape(Yj, [batch_size, seq_len, joint_size])
 

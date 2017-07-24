@@ -11,18 +11,18 @@ import time
 np.set_printoptions(threshold = 'nan')
 
 # hyperparameters
-learning_rate = 0.0005
-num_epochs = 150
+learning_rate = 0.0002
+num_epochs = 300
 total_length = 1200
 joint_size = 8
 vision_size = 30
 input_size = joint_size + vision_size
 output_size = input_size
-cell_size = [100, 30, 100]
+cell_size = [120, 40, 120]
 total_cell_size = np.sum(cell_size)
 num_layer = 3
 batch_size = 1
-num_batch = 1
+num_batch = 8
 seq_len = 80
 
 encode_path = './data/encode/'
@@ -123,7 +123,7 @@ def readData(encode_num, is_self):
     
     return(data_x, data_y, actual)
 
-def test(batch):
+def test(batch, middle_list):
     x, y, actual = readData(batch, True)
     
     inH = np.zeros([batch_size, total_cell_size])
@@ -138,6 +138,12 @@ def test(batch):
         dic = {x_t: X, Hin_t: inH}
         outH, pred = sess.run([state_t, Yj_t], feed_dict = dic)
         inH = outH
+        middle = np.zeros(cell_size[1] + 1)
+        middle[0] = batch
+        middle[1: cell_size[1] + 1] = outH[0, cell_size[0]: cell_size[0] + cell_size[1]]
+        middle_list.append(middle)
+#        print middle.shape
+#        print middle
         start_index += seq_len
         for i in range(seq_len):
             pred_series.append(pred[i, :])
@@ -169,7 +175,7 @@ with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
     
     # load data for batches
-    data_set = [21]
+    data_set = [2, 5, 8, 11, 14, 17, 20, 23]
     x_b = np.zeros([num_batch, batch_size, total_length, input_size])
     y_b = np.zeros([num_batch, batch_size, total_length, input_size])
     actual_b = np.zeros([num_batch, total_length, input_size])
@@ -215,8 +221,16 @@ with tf.Session(config=config) as sess:
     
     time2 = time.time()
     print "time per step = " + str((time2 - time0) / num_epochs)
-    test(21)
-    test(22)
-    test(23)
-
+    
+    # store the testing figure and middle layer
+    middle_list = []
+    for data in data_set:
+        test(data, middle_list)
+    print len(middle_list)
+    
+    f = open('./result/middle_layer.csv', 'w')
+    writer = csv.writer(f, lineterminator='\n')
+    writer.writerows(middle_list)
+    f.close()
+    
     

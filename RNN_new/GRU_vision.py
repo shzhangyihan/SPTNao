@@ -11,8 +11,8 @@ import time
 np.set_printoptions(threshold = 'nan')
 
 # hyperparameters
-learning_rate = 0.0005
-num_epochs = 150
+learning_rate = 0.0003
+num_epochs = 200
 total_length = 1200
 vision_size = 30
 input_size = vision_size
@@ -21,7 +21,7 @@ cell_size = [120, 40, 120]
 total_cell_size = np.sum(cell_size)
 num_layer = 3
 batch_size = 1
-num_batch = 1
+num_batch = 8
 seq_len = 80
 
 encode_path = './data/encode/'
@@ -112,7 +112,7 @@ with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
     
     # load data for batches
-    data_set = [21]
+    data_set = [1, 4, 7, 10, 13, 16, 19, 22]
     x_b = np.zeros([num_batch, batch_size, total_length, input_size])
     y_b = np.zeros([num_batch, batch_size, total_length, input_size])
     actual_b = np.zeros([num_batch, total_length, input_size])
@@ -156,11 +156,8 @@ with tf.Session(config=config) as sess:
     
     # store the testing figure and middle layer
     middle_list = []
-#    for data in data_set:
-#        test(data, middle_list)
-    test(21, middle_list)
-    test(22, middle_list)
-    test(23, middle_list)
+    for data in data_set:
+        test(data, middle_list)
     print len(middle_list)
     
     f = open('./result_vision/middle_layer.csv', 'w')

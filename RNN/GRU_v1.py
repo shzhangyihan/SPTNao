@@ -3,53 +3,109 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import csv
 import cv2
+import time
+
+# this version does a learning for both self and other
+# has three RNN layers with size 120, 40, 120
+# checkpoint version for final presentation
 
 np.set_printoptions(threshold = 'nan')
 
 # hyperparameters
-learning_rate = 0.0005
-num_epochs = 120
-num_epochs_other = 200
-total_length = 840
-input_size = 4 + 40
+learning_rate = 0.0002
+num_epochs = 300
+total_length = 1200
+joint_size = 8
+vision_size = 30
+input_size = joint_size + vision_size
 output_size = input_size
-cell_size = 4 * input_size
-num_layer = 4
-num_batch = 1
-seq_len = 70
+cell_size = [120, 40, 120]
+total_cell_size = np.sum(cell_size)
+num_layer = 3
+batch_size = 1
+num_batch = 8
+seq_len = 80
 
-root_path = '../Nao_data/resize_4bit_noisy_40/'
-joint_path = '../Nao_data/nao_data_joint.csv'
+encode_path = './data/encode/'
+joint_path = {
+    0: './data/joint/nao_data_both.csv',
+    1: './data/joint/nao_data_left.csv',
+    2: './data/joint/nao_data_right.csv',
+}
+result_path = './result/'
 
-# GRU graph input
-x_placeholder = tf.placeholder(tf.float32, [None, None, input_size])
-y_placeholder = tf.placeholder(tf.float32, [None, None, output_size])
-Y_ = tf.reshape(y_placeholder, [-1, output_size])
-Hin = tf.placeholder(tf.float32, [None, cell_size * num_layer])
+def initJoint(length):
+    joint = np.zeros([batch_size, length, joint_size]).astype(float)
+    
+    f = open(joint_path[0], 'rb')
+    dataReader = csv.reader(f)
+    for row in dataReader:
+        j = np.asarray(row)
+        break
+    joint[:, :, 0:joint_size] = j
+    return joint
 
-# GRU model
-mcell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(cell_size) for _ in range(num_layer)], state_is_tuple = False)
-out, state = tf.nn.dynamic_rnn(mcell, x_placeholder, initial_state = Hin)
+with tf.variable_scope('GRU') as scope:
+    # GRU graph input for training
+    x_placeholder = tf.placeholder(tf.float64, [None, None, vision_size])
+    y_placeholder = tf.placeholder(tf.float64, [None, None, output_size])
+    Y_ = tf.reshape(y_placeholder, [-1, output_size])
+    Hin = tf.placeholder(tf.float64, [None, total_cell_size])
+    Xj = tf.Variable(initJoint(seq_len))
+    reset = tf.assign(Xj, initJoint(seq_len))
+    
+    # GRU model for training
+    mcell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.GRUCell(cell_size[i]) for i in range(num_layer)], state_is_tuple = False)
+    x_in = tf.concat([Xj, x_placeholder], 2)
+    out, state = tf.nn.dynamic_rnn(mcell, x_in, initial_state = Hin)
+    
+    # output
+    Yj = tf.contrib.layers.fully_connected(tf.reshape(out, [-1, cell_size[2]]), joint_size, activation_fn = None, scope = "joint")
+    Yv = tf.contrib.layers.fully_connected(tf.reshape(out, [-1, cell_size[2]]), vision_size, activation_fn = None, scope = "vision")
+    Y = tf.concat([Yj, Yv], 1)
+    Xj = tf.reshape(Yj, [batch_size, seq_len, joint_size])
+    
+    # loss and optimizer for self
+    loss = tf.contrib.losses.mean_squared_error(Y, Y_)
+    optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
+    
+    # loss and optimizer for other
+    Y_j, Y_v = tf.split(Y_, [joint_size, vision_size], 1)
+    loss_other = tf.contrib.losses.mean_squared_error(Yv, Y_v)
+    optimizer_other = tf.train.AdamOptimizer(learning_rate).minimize(loss_other)
+    
+    # GRU graph input for testing
+    x_t = tf.placeholder(tf.float64, [None, 1, vision_size])
+    Hin_t = tf.placeholder(tf.float64, [None, total_cell_size])
+    Xj_t = tf.Variable(initJoint(1))
+    reset_t = tf.assign(Xj_t, initJoint(1))
+    
+    # GRU model for testing
+    x_in_t = tf.concat([Xj_t, x_t], 2)
+    scope.reuse_variables()
+    out_t, state_t = tf.nn.dynamic_rnn(mcell, x_in_t, initial_state = Hin_t)
+    
+    # test output
+    Yj_t = tf.contrib.layers.fully_connected(tf.reshape(out_t, [-1, cell_size[2]]), joint_size, activation_fn = None, reuse = True,scope = "joint")
+    Yv_t = tf.contrib.layers.fully_connected(tf.reshape(out_t, [-1, cell_size[2]]), vision_size, activation_fn = None, reuse = True, scope = "vision")
+    Y_t = tf.concat([Yj, Yv], 1)
+    Xj_t = tf.reshape(Yj_t, [batch_size, 1, joint_size])
 
-# output
-Y = tf.contrib.layers.linear(tf.reshape(out, [-1, cell_size]), output_size)
-
-# loss and optimizer
-loss = tf.contrib.losses.mean_squared_error(Y, Y_)
-optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
+# run the tf graph on CPU
+config = tf.ConfigProto(device_count = {'GPU': 0})
 
 def readData(encode_num, is_self):
-    file_path = root_path + 'encode_' + str(encode_num) + '.txt'
+    file_path = encode_path + 'encode_' + str(encode_num) + '.txt'
     print 'file = ', file_path
     array = []
-    f = open(joint_path, 'rb')
+    f = open(joint_path[encode_num % 3], 'rb')
     dataReader = csv.reader(f)
     for row in dataReader:
         array.append(row)
     data = map(lambda x:[float(v) for v in x], array)
     data = np.asarray(data)
     
-    data_zero = np.zeros([total_length, 4])
+    data_zero = np.zeros([total_length, joint_size])
     
     encode_data = np.loadtxt(file_path)
     data = np.concatenate((data, encode_data), axis = 1)
@@ -63,153 +119,119 @@ def readData(encode_num, is_self):
         data_y = np.roll(data_zero, 1, axis = 0)
         actual = np.roll(data, 1, axis = 0)
     
-    data_x = data_x.reshape((num_batch, -1, input_size))
-    data_y = data_y.reshape((num_batch, -1, input_size))
+    data_x = data_x.reshape((batch_size, -1, input_size))
+    data_y = data_y.reshape((batch_size, -1, input_size))
     
     return(data_x, data_y, actual)
 
-def updataData(x, pred):
-    y = x
-    pred = np.asarray(pred)
-    pred_x = np.roll(pred, -1, axis = 0)
-    pred_x = pred_x.reshape((num_batch, total_length, input_size))
-    pred_y = pred.reshape((num_batch, total_length, input_size))
-#    print x.shape
-#    print pred.shape
-    for i in range(4):
-        x[0, :, i] = pred_x[0, :, i]
-        y[0, :, i] = pred_y[0, :, i]
-    return(x, y)
-
-def test(data_set):
-    if data_set == 8:
-        x, y, actual = readData(data_set, True)
-    else:
-        x, y, actual = readData(data_set, False)
+def test(batch, middle_list):
+    x, y, actual = readData(batch, True)
     
-    inH = np.zeros([num_batch, cell_size * num_layer])
+    inH = np.zeros([batch_size, total_cell_size])
+    sess.run(reset_t)
+    seq_len = 1
     start_index = 0
     pred_series = []
     while start_index < total_length:
-        X = x[:, start_index: start_index + 1, :]
-        Y_ = y[:, start_index: start_index + 1, :]
-        dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
-        outH, pred = sess.run([state, Y], feed_dict = dic)
+#        print start_index
+        X = x[:, start_index: start_index + seq_len, joint_size:]
+        Y_ = y[:, start_index: start_index + seq_len, :]
+        dic = {x_t: X, Hin_t: inH}
+        outH, pred = sess.run([state_t, Yj_t], feed_dict = dic)
         inH = outH
-        start_index += 1
-        pred_series.append(pred[0, :])
-        if start_index < total_length:
-            for i in range(4):
-                x[0, start_index, i] = pred[0, i]
+        middle = np.zeros(cell_size[1] + 1)
+        middle[0] = batch
+        middle[1: cell_size[1] + 1] = outH[0, cell_size[0]: cell_size[0] + cell_size[1]]
+        middle_list.append(middle)
+#        print middle.shape
+#        print middle
+        start_index += seq_len
+        for i in range(seq_len):
+            pred_series.append(pred[i, :])
         
-    plot(None, pred_series, actual, True)
+    plot(None, pred_series, actual, batch)
 
-def plot(loss_list, prediction_series, actual_series, need_press):
+def plot(loss_list, prediction_series, actual_series, batch):
     print 'p'
-    p = plt.subplot(2, 3, 1)
+    figure_path = result_path + 'figure_' + str(batch) + '.png'
+    p = plt.subplot(3, 3, 1)
     plt.cla()
     if loss_list is not None:
         plt.plot(loss_list)
     p.set_title("Loss function")
     
-    for iterator in range(4):
-        p = plt.subplot(2, 3, iterator + 3)
+    for iterator in range(joint_size):
+        p = plt.subplot(3, 3, iterator + 2)
         plt.cla()
-        plt.axis([0, total_length, -1, 1])
+        plt.axis([0, total_length, -0.5, 1.5])
         p.plot(np.asarray(prediction_series)[:, iterator], color = 'r')
         p.plot(np.asarray(actual_series)[:, iterator], color = 'b')
         title = "Joint info #" + str(iterator + 1)
         p.set_title(title)
     
     plt.draw()
-    if need_press:
-        plt.waitforbuttonpress()
-    else:
-        plt.pause(0.00001)
+    plt.savefig(figure_path)
 
-with tf.Session() as sess:
+with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
     
-    x, y, actual = readData(8, True)
+    # load data for batches
+    data_set = [0, 3, 6, 9, 12, 15, 18, 21]
+    x_b = np.zeros([num_batch, batch_size, total_length, input_size])
+    y_b = np.zeros([num_batch, batch_size, total_length, input_size])
+    actual_b = np.zeros([num_batch, total_length, input_size])
+    
+    for batch in range(num_batch):
+        x_b[batch], y_b[batch], actual_b[batch] = readData(data_set[batch], True)
+    
     loss_list = []
+    time0 = time.time()
     for epoch in range(num_epochs):
-        inH = np.zeros([num_batch, cell_size * num_layer])
         epoch_loss = 0
-        start_index = 0
-        pred_series = []
-        while start_index < total_length:
-            X = x[:, start_index: start_index + seq_len, :]
-            Y_ = y[:, start_index: start_index + seq_len, :]
-            dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
-            _, l, outH, pred = sess.run([optimizer, loss, state, Y], feed_dict = dic)
-            inH = outH
-            epoch_loss += l
-            start_index += seq_len
-            # prepare for plot
-            if epoch % 5 == 0:
-                for i in range(seq_len):
-                    pred_series.append(pred[i, :])
+        for batch in range(num_batch):
+            x = x_b[batch]
+            y = y_b[batch]
+            actual = actual_b[batch]
+            inH = np.zeros([batch_size, total_cell_size])
+            sess.run(reset)
+            start_index = 0
+            pred_series = []
+            while start_index < total_length:
+                X = x[:, start_index: start_index + seq_len, joint_size:]
+                Y_ = y[:, start_index: start_index + seq_len, :]
+                dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
+                # if self
+                if data_set[batch] >= 21:
+                    _, l, outH, pred = sess.run([optimizer_other, loss_other, state, Yj], feed_dict = dic)
+                else:
+                    _, l, outH, pred = sess.run([optimizer_other, loss_other, state, Yj], feed_dict = dic)
+                inH = outH
+                epoch_loss += l
+                start_index += seq_len
+                # prepare for plotting
+                if epoch % 5 == 0:
+                    for i in range(seq_len):
+                        pred_series.append(pred[i, :])
         
         loss_list.append(epoch_loss)
         print("Epoch ", epoch, " loss: ", epoch_loss)
         if epoch % 5 == 0:
-            plot(loss_list, pred_series, actual, False)
+            time1 = time.time()
+            print "time diff = " + str(time1 - time0)
+            plot(loss_list, pred_series, actual, 'train')
     
-    test(8)
-    test(0)
-    test(1)
-    test(2)
-    test(3)
-    test(4)
-    test(5)
-    test(6)
-    test(7)
+    time2 = time.time()
+    print "time per step = " + str((time2 - time0) / num_epochs)
     
-    x, y, actual = readData(0, False)
-    for epoch in range(num_epochs_other):
-        print x
-        inH = np.zeros([num_batch, cell_size * num_layer])
-        epoch_loss = 0
-        start_index = 0
-        pred_series = []
-        while start_index < total_length:
-            X = x[:, start_index: start_index + seq_len, :]
-            Y_ = y[:, start_index: start_index + seq_len, :]
-            dic = {x_placeholder: X, y_placeholder: Y_, Hin: inH}
-            _, l, outH, pred = sess.run([optimizer, loss, state, Y], feed_dict = dic)
-            inH = outH
-            epoch_loss += l
-            start_index += seq_len
-            for i in range(seq_len):
-                pred_series.append(pred[i, :])
-                
-        loss_list.append(epoch_loss)
-        print("Epoch ", epoch, " loss: ", epoch_loss)
-        if num_epochs_other % 5 == 0:
-            plot(loss_list, pred_series, actual, False)
-        if num_epochs_other == num_epochs_other - 1:
-            plot(loss_list, pred_series, actual, True)
-        
-        x, y = updataData(x, pred_series)
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-
+    # store the testing figure and middle layer
+    middle_list = []
+    for data in data_set:
+        test(data, middle_list)
+    print len(middle_list)
+    
+    f = open('./result/middle_layer.csv', 'w')
+    writer = csv.writer(f, lineterminator='\n')
+    writer.writerows(middle_list)
+    f.close()
+    
+    

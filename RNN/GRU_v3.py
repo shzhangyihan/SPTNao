@@ -5,8 +5,8 @@ import csv
 import cv2
 import time
 
-# this version assumes the ability to know joint in 135
-# starting frame for both: self -- 130~131; 135 -- 40~41
+# this version assumes the ability to know joint in all prespective
+# starting frame for both: self: 130; 45: 80; 90: 190; 135: 40; 180: 113; 225: 126; 270: 63; 315: 206
 # starting frame for left: self -- 140~141; 135 -- 146~147
 # starting frame for right: self -- 127~128; 135 -- 168~169
 
@@ -14,7 +14,7 @@ np.set_printoptions(threshold = 'nan')
 
 # hyperparameters
 learning_rate = 0.0002
-num_epochs = 300
+num_epochs = 150
 total_length = 1200
 joint_size = 8
 vision_size = 30
@@ -109,13 +109,21 @@ def readData(encode_num, is_self):
     data_zero = np.zeros([total_length, joint_size])
     
     encode_data = np.loadtxt(file_path)
-    # roll encode for 135
+    # roll encode for both
+    if encode_num == 0:
+        encode_data = np.roll(encode_data, 50, axis = 0)
+    if encode_num == 3:
+        encode_data = np.roll(encode_data, -60, axis = 0)
     if encode_num == 6:
         encode_data = np.roll(encode_data, 90, axis = 0)
-    if encode_num == 7:
-        encode_data = np.roll(encode_data, -6, axis = 0)
-    if encode_num == 8:
-        encode_data = np.roll(encode_data, -41, axis = 0)
+    if encode_num == 9:
+        encode_data = np.roll(encode_data, 17, axis = 0)
+    if encode_num == 12:
+        encode_data = np.roll(encode_data, 4, axis = 0)
+    if encode_num == 15:
+        encode_data = np.roll(encode_data, 67, axis = 0)
+    if encode_num == 18:
+        encode_data = np.roll(encode_data, -76, axis = 0)
     
     data = np.concatenate((data, encode_data), axis = 1)
     data_zero = np.concatenate((data_zero, encode_data), axis = 1)
